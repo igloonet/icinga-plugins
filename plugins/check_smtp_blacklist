@@ -7,7 +7,7 @@ require 'optparse'
 
 class RblChecker
   include Singleton
-  attr_accessor :host, :lists
+  attr_accessor :host, :timeout
   ID = 'RblChecker 0.1'
 
   @@lists = [
@@ -118,6 +118,7 @@ class RblChecker
   ]
 
   def initialize
+    self.timeout = 5
     begin
       get_options
     rescue ArgumentError => e
@@ -130,8 +131,11 @@ class RblChecker
       opts.banner = "Usage: #{File.basename $0} [options]"
       opts.separator ""
       opts.separator "Specific options:"
-      opts.on('-H', '--host=', String, 'A host to check') do |host|
+      opts.on('-H', '--host=', String, 'Host IP to check') do |host|
         self.host = host
+      end
+      opts.on('-t', '--timeout=', Integer, "Blacklist timeout (default #{timeout}s)") do |timeout|
+        self.timeout = timeout
       end
       opts.on('-h', '--help', 'Show this message and exit') { puts opts; exit}
       opts.on('-v', '--version', 'Print version info and exit') { puts ID; exit }
@@ -155,7 +159,7 @@ class RblChecker
       url = list[1]
     
       begin
-        status = Timeout::timeout(5) {
+        status = Timeout::timeout(self.timeout) {
           Resolv::getaddress(check+'.'+blhost)
         }
         
