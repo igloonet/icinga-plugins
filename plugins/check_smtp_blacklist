@@ -1,0 +1,187 @@
+#!/usr/bin/ruby
+
+require 'resolv'
+require 'timeout'
+require 'singleton'
+require 'optparse'
+
+class RblChecker
+  include Singleton
+  attr_accessor :host, :lists
+  ID = 'RblChecker 0.1'
+
+  @@lists = [
+    ["uribl.swinog.ch","http://antispam.imp.ch/06-uribl.php?lng=1"],
+    ["black.uribl.com","http://www.uribl.com/about.shtml"],
+    ["grey.uribl.com","http://www.uribl.com/about.shtml"],
+    ["red.uribl.com","http://www.uribl.com/about.shtml"],
+    ["multi.uribl.com","http://www.uribl.com/about.shtml"],
+    ["dnsbl.inps.de","http://dnsbl.inps.de/"],
+    ["ix.dnsbl.manitu.net","http://www.dnsbl.manitu.net/"],
+    ["tor.dan.me.uk","http://www.dan.me.uk/dnsbl"],
+    ["torexit.dan.me.uk","http://www.dan.me.uk/dnsbl"],
+    ["combined.rbl.msrbl.net","http://www.msrbl.com/"],
+    ["bl.spamcop.net","http://www.spamcop.net/bl.shtml"],
+    ["rbl.efnetrbl.org",""],
+    ["virbl.dnsbl.bit.nl","https://virbl.bit.nl/faq.php"],
+    ["relays.mail-abuse.org","http://work-rss.mail-abuse.org/rss/"],
+    ["dev.null.dk","http://dev.null.dk/"],
+    ["rbl.maps.vix.com","http://www.mail-abuse.org/rbl/"],
+    ["blackholes.mail-abuse.org","http://www.mail-abuse.org/rss/"],
+    ["dialups.mail-abuse.org","http://www.mail-abuse.org/dul/"],
+    ["dul.orca.bc.ca","http://dul.orca.bc.ca/"],
+    ["dul.maps.vix.com","http://dul.maps.vix.com/"],
+    ["blackholes.five-ten-sg.com","http://www.five-ten-sg.com/blackhole.php"],
+    ["rbl-plus.mail-abuse.org",""],
+    ["spamsources.fabel.dk",""],
+    ["sbl.spamhaus.org","http://www.spamhaus.org/sbl/"],
+    ["xbl.spamhaus.org","http://www.spamhaus.org/xbl/"],
+    ["dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["http.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["socks.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["misc.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["smtp.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["web.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["spam.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["block.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["zombie.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["dul.dnsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["rhsbl.sorbs.net","http://www.dnsbl.nl.sorbs.net/"],
+    ["bl.csma.biz","http://bl.csma.biz/"],
+    ["dnsbl.njabl.org",""],
+    ["cbl.abuseat.org",""],
+    ["spamguard.leadmon.net",""],
+    ["relays.nthelp.com",""],
+    ["okrelays.nthelp.com",""],
+    ["rbl.jp",""],
+    ["virus.rbl.jp",""],
+    ["dialup.blacklist.jippg.org",""],
+    ["blackholes.intersil.net",""],
+    ["access.redhawk.org",""],
+    ["assholes.madscience.nl",""],
+    ["blackholes.sandes.dk",""],
+    ["blacklist.sci.kun.nl",""],
+    ["blocked.hilli.dk",""],
+    ["bl.spamcannibal.org","http://spamcannibal.org/"],
+    ["bl.technovision.dk",""],
+    ["cart00ney.surriel.com",""],
+    ["dialups.visi.com",""],
+    ["dnsbl-1.uceprotect.net","http://www.uceprotect.net/en/"],
+    ["dnsbl-2.uceprotect.net","http://www.uceprotect.net/en/"],
+    ["dnsbl-3.uceprotect.net","http://www.uceprotect.net/en/"],
+    ["dnsbl.antispam.or.id",""],
+    ["dnsbl.kempt.net",""],
+    ["dsbl.dnsbl.net.au",""],
+    ["duinv.aupads.org",""],
+    ["dul.ru",""],
+    ["fl.chickenboner.biz",""],
+    ["forbidden.icm.edu.pl",""],
+    ["hil.habeas.com",""],
+    ["intruders.docs.uu.se",""],
+    ["korea.services.net",""],
+    ["l1.spews.dnsbl.sorbs.net",""],
+    ["l2.spews.dnsbl.sorbs.net",""],
+    ["mail-abuse.blacklist.jippg.org",""],
+    ["map.spam-rbl.com",""],
+    ["msgid.bl.gweep.ca",""],
+    ["no-more-funn.moensted.dk","http://moensted.dk/spam/no-more-funn/"],
+    ["ohps.dnsbl.net.au",""],
+    ["omrs.dnsbl.net.au",""],
+    ["orid.dnsbl.net.au",""],
+    ["orvedb.aupads.org",""],
+    ["osps.dnsbl.net.au",""],
+    ["osrs.dnsbl.net.au",""],
+    ["owfs.dnsbl.net.au",""],
+    ["owps.dnsbl.net.au",""],
+    ["pdl.dnsbl.net.au",""],
+    ["probes.dnsbl.net.au",""],
+    ["proxy.bl.gweep.ca",""],
+    ["psbl.surriel.com",""],
+    ["pss.spambusters.org.ar",""],
+    ["rbl.schulte.org",""],
+    ["rdts.dnsbl.net.au",""],
+    ["relays.bl.gweep.ca",""],
+    ["relays.bl.kundenserver.de",""],
+    ["relays.nether.net",""],
+    ["ricn.dnsbl.net.au",""],
+    ["rmst.dnsbl.net.au",""],
+    ["rsbl.aupads.org",""],
+    ["sbl-xbl.spamhaus.org",""],
+    ["sorbs.dnsbl.net.au",""],
+    ["spam.olsentech.net",""],
+    ["spamsites.dnsbl.net.au",""],
+    ["spamsources.dnsbl.info",""],
+    ["spews.dnsbl.net.au",""],
+    ["t1.dnsbl.net.au","http://www.dnsbl.net.au/t1/"],
+    ["ucepn.dnsbl.net.au",""],
+    ["will-spam-for-food.eu.org",""]
+  ]
+
+  def initialize
+    begin
+      get_options
+    rescue ArgumentError => e
+      puts e.message; exit(3)
+    end
+  end
+  
+  def get_options
+    OptionParser.new do |opts|
+      opts.banner = "Usage: #{File.basename $0} [options]"
+      opts.separator ""
+      opts.separator "Specific options:"
+      opts.on('-H', '--host=', String, 'A host to check') do |host|
+        self.host = host
+      end
+      opts.on('-h', '--help', 'Show this message and exit') { puts opts; exit}
+      opts.on('-v', '--version', 'Print version info and exit') { puts ID; exit }
+      
+    end.parse!
+    
+    raise ArgumentError, 'argument -h is required.' if self.host.nil?
+  end
+  
+  def check
+    status = 0
+    msg = ''
+
+    timeouts = 0
+    ok = 0
+    
+    check = self.host.split('.').reverse.join('.')
+    
+    @@lists.each do |list|
+      blhost = list[0]
+      url = list[1]
+    
+      begin
+        status = Timeout::timeout(5) {
+          Resolv::getaddress(check+'.'+blhost)
+        }
+        
+        msg += blhost
+        msg += ' - '+url unless url.empty?
+        status = 2
+       
+      rescue Exception => e
+        case e
+          when Resolv::ResolvError
+	    ok += 1
+    
+          when Interrupt
+	    timeouts += 1
+    
+          else
+            msg = "Unhandled plugin problem"
+            status = 2
+        end
+      end
+    end
+     
+    puts status == 2 ? msg : "Everything fine. OK: #{ok}; Timeout: #{timeouts}"
+    exit status
+  end
+end
+
+RblChecker.instance.check
+
