@@ -1,0 +1,119 @@
+#!/usr/bin/env ruby
+
+# check_zones_in_sync
+#
+# Check if zones are in sync on multiple DNS servers really fast.
+#
+# Info and updates: https://github.com/igloonet/icinga-plugins
+
+# Copyright (c) 2014 igloonet, s.r.o.   https://igloonet.cz/
+#         
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#           
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#   
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+VERSION=0.1
+
+require 'rubydns'
+require 'optparse'
+require 'ostruct'
+
+class OptparseChzones
+  def self.parse(args)
+    options = OpenStruct.new
+    options.servers = []
+    options.file = 'domains.txt'
+
+    opt_parser = OptionParser.new do |opts|
+      opts.banner = "Usage: check_zones_in_sync -s dns,servers [-f domains.txt]"
+
+      opts.separator ""
+      opts.separator "Specific options:"
+
+      opts.on("-s", "--servers X,Y,Z", Array, "DNS servers to check") do |s|
+        options.servers = s
+      end
+
+      opts.on("-f", "--file [path_to_domain_file]", "File with list of zones") do |f|
+        options.file = f
+      end
+
+      opts.on("-d", "--[no-]debug", "Turn on debugging") do |d|
+        options.debug = d
+      end
+
+      opts.on("-v", "--version") do
+        puts "check_zones_in_sync\n\nversion: #{VERSION}"
+      end
+      opts.on_tail("-h", "--help", "Show this help") do
+        puts opts
+        exit
+      end
+    end
+
+    opt_parser.parse!(args)
+
+    options
+  end
+
+end
+
+class ZoneCheck
+  def initialize(servers, options = {})
+    @options = options
+    @servers = {}
+    servers.each {|server| @servers[server] = RubyDNS::Resolver.new([[:udp, server, 53]])}
+  end
+
+  def check(zone)
+    responses = []
+    @servers.each do |server,resolver|
+      EventMachine::run do
+        resolver.query(zone, Resolv::DNS::Resource::IN::SOA) do |response|
+          case response
+          when RubyDNS::Message
+            serial = response.answer.select{|record| record[0].to_s == zone}.collect{|record| record[2].serial}.first
+            responses.push(serial)
+            puts "query server #{server} for zone #{zone}. Serial #{serial}" if @options.debug
+          else
+            puts "Error while processing zone #{zone}"
+            exit 3
+          end
+          EventMachine::stop
+        end
+      end
+    end
+
+    responses.max == responses.min
+  end
+end
+
+options = OptparseChzones.parse(ARGV)
+zone_check = ZoneCheck.new(options.servers, options)
+
+# check all domains
+File.readlines(options.file).each do |zone|
+  unless zone_check.check(zone.chomp)
+    puts "Zone #{zone} not in sync"
+    exit 2
+  end
+end
+
+puts
+puts "OK. Servers #{options.servers.join(", ")} in sync."
+
