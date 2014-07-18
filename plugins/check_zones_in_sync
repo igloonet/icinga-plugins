@@ -29,16 +29,18 @@
 
 VERSION=0.1
 
-require 'rubydns'
 require 'optparse'
 require 'ostruct'
+require 'celluloid/io'
 
+# Option parsing
 class OptparseChzones
   def self.parse(args)
     options = OpenStruct.new
     options.servers = []
     options.file = 'domains.txt'
     options.timing = false
+    options.workers = 50
 
     opt_parser = OptionParser.new do |opts|
       opts.banner = "Usage: check_zones_in_sync -s dns,servers [-f domains.txt]"
@@ -46,8 +48,12 @@ class OptparseChzones
       opts.separator ""
       opts.separator "Specific options:"
 
-      opts.on("-s", "--servers X,Y,Z", Array, "DNS servers to check") do |s|
+      opts.on("-s", "--servers x,y,z", Array, "DNS servers to check") do |s|
         options.servers = s
+      end
+
+      opts.on("-w", "--workers 100", Integer, "Number for workers. Experiment to achieve best results but do not set too high.") do |w|
+        options.workers = w * 1
       end
 
       opts.on("-f", "--file [path_to_domain_file]", "File with list of zones") do |f|
@@ -68,7 +74,6 @@ class OptparseChzones
       end
       opts.on_tail("-h", "--help", "Show this help") do
         puts opts
-        exit
       end
     end
 
@@ -76,54 +81,94 @@ class OptparseChzones
 
     options
   end
-
 end
 
-class ZoneCheck
-  def initialize(servers, options = {})
-    @options = options
-    @servers = {}
-    servers.each {|server| @servers[server] = RubyDNS::Resolver.new([[:udp, server, 53]])}
-  end
+module Celluloid
+  module IO
+    class DNSResolver
+      def initialize(nameserver)
+         @nameservers = [nameserver]
 
-  def check(zone)
-    responses = []
-    @servers.each do |server,resolver|
-      EventMachine::run do
-        resolver.query(zone, Resolv::DNS::Resource::IN::SOA) do |response|
-          case response
-          when RubyDNS::Message
-            serial = response.answer.select{|record| record[0].to_s == zone}.collect{|record| record[2].serial}.first
-            responses.push(serial)
-            puts "query server #{server} for zone #{zone}. Serial #{serial}" if @options.debug
-          else
-            puts "Error while processing zone #{zone}"
-            exit 3
-          end
-          EventMachine::stop
+        # TODO: fall back on other nameservers if the first one is unavailable
+        @server = @nameservers.first
+
+        # The non-blocking secret sauce is here, as this is actually a
+        # Celluloid::IO::UDPSocket
+        @socket = UDPSocket.new
+      end
+      
+      def build_query_soa(zone)
+        Resolv::DNS::Message.new.tap do |query|
+          query.id = self.class.generate_id
+          query.rd = 1
+          query.add_question zone, Resolv::DNS::Resource::IN::SOA
         end
       end
+
+      def get_serial(zone)
+        query = build_query_soa(zone)
+        @socket.send query.encode, 0, @server, DNS_PORT
+        data, _ = @socket.recvfrom(512)
+        response = Resolv::DNS::Message.decode(data)
+        return response.answer.select{|record| record[0].to_s == zone}.collect{|record| record[2].serial}.first
+      end
+    end
+    
+  end
+end
+
+# Zone check class
+class ZoneCheck
+  include Celluloid
+
+  # setup resolvers for all servers
+  def initialize(options = {})
+    @options = options
+    @servers = options.servers
+  end
+
+  # check zone 
+  def check(zone)
+    p "checking zone #{zone}" if @options.debug
+    @zone = zone
+    responses = []
+    # get serial from every server
+    @servers.each do |server|
+      serial = Celluloid::IO::DNSResolver.new(server).get_serial(@zone)
+      return [3, "Zone #{@zone} is missing on #{server}."] if serial.nil?
     end
 
-    responses.max == responses.min
+    # in case all serials are not same, we return critical
+    if responses.max == responses.min
+      return [0, "Zone #{@zone} OK"]
+    else
+      return [3, "Zone #{@zone} is missing on #{server}."] if serial.nil?
+    end
   end
 end
 
+# get options, start timer and create new instance of ZoneCheck
 options = OptparseChzones.parse(ARGV)
-zone_check = ZoneCheck.new(options.servers, options)
-
 t1 = Time.now if options.timing
 
-# check all domains
-File.readlines(options.file).each do |zone|
-  unless zone_check.check(zone.chomp)
-    puts "Zone #{zone} not in sync"
-    exit 2
-  end
+# create pool and fill it with zones
+results = []
+zones = File.readlines(options.file)
+pool = ZoneCheck.pool(size: options.workers, args: [options])
+zones.map {|z| results << pool.future.check(z.chomp)}
+
+# default message is OK
+exit_value = 0
+message = "Servers #{options.servers.join(", ")} in sync."
+
+# go through results and modify exit value and message if not 0
+results.each do |f| 
+  exit_value, message = f.value unless f.value.first == 0
 end
 
-puts
-puts "OK. Servers #{options.servers.join(", ")} in sync."
-
+# print spent time if enabled
 puts "\nSpent #{Time.now - t1} secs" if options.timing
 
+# return OK if we reached end
+puts message
+exit exit_value
