@@ -13,8 +13,8 @@ retrieve SOA record and compare serial from it.
 
 Works similar to [checkexpire plugin](http://exchange.nagios.org/directory/Plugins/Network-Protocols/DNS/checkexpire/details) but much faster.
 
-check_zones_in_sync is tested on ruby 1.9.3 and requires [rubydns](https://github.com/ioquatix/rubydns) gem
-    gem install rubydns
+check_zones_in_sync is tested on ruby 1.9.3 and requires [celluloid-io](https://github.com/celluloid/celluloid-io) gem
+    gem install celluloid-io 
 
 #### Usage
 
