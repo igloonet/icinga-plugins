@@ -38,6 +38,7 @@ class OptparseChzones
     options = OpenStruct.new
     options.servers = []
     options.file = 'domains.txt'
+    options.timing = false
 
     opt_parser = OptionParser.new do |opts|
       opts.banner = "Usage: check_zones_in_sync -s dns,servers [-f domains.txt]"
@@ -55,6 +56,11 @@ class OptparseChzones
 
       opts.on("-d", "--[no-]debug", "Turn on debugging") do |d|
         options.debug = d
+        options.timing = true
+      end
+
+      opts.on("-t", "--[no-]timing", "Turn on spent time info") do |t|
+        options.timing = t
       end
 
       opts.on("-v", "--version") do
@@ -106,6 +112,8 @@ end
 options = OptparseChzones.parse(ARGV)
 zone_check = ZoneCheck.new(options.servers, options)
 
+t1 = Time.now if options.timing
+
 # check all domains
 File.readlines(options.file).each do |zone|
   unless zone_check.check(zone.chomp)
@@ -116,4 +124,6 @@ end
 
 puts
 puts "OK. Servers #{options.servers.join(", ")} in sync."
+
+puts "\nSpent #{Time.now - t1} secs" if options.timing
 
