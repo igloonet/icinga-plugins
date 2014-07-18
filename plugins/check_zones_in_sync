@@ -129,20 +129,20 @@ class ZoneCheck
 
   # check zone 
   def check(zone)
-    p "checking zone #{zone}" if @options.debug
+    puts "checking zone #{zone}" if @options.debug
     @zone = zone
     responses = []
     # get serial from every server
     @servers.each do |server|
       serial = Celluloid::IO::DNSResolver.new(server).get_serial(@zone)
-      return [3, "Zone #{@zone} is missing on #{server}."] if serial.nil?
+      return [2, "Zone #{@zone} is missing on #{server}."] if serial.nil?
     end
 
     # in case all serials are not same, we return critical
     if responses.max == responses.min
       return [0, "Zone #{@zone} OK"]
     else
-      return [3, "Zone #{@zone} is missing on #{server}."] if serial.nil?
+      return [2, "Zone #{@zone} NOT in sync."] if serial.nil?
     end
   end
 end
@@ -150,6 +150,7 @@ end
 # get options, start timer and create new instance of ZoneCheck
 options = OptparseChzones.parse(ARGV)
 t1 = Time.now if options.timing
+Celluloid.logger = nil
 
 # create pool and fill it with zones
 results = []
@@ -167,7 +168,7 @@ results.each do |f|
 end
 
 # print spent time if enabled
-puts "\nSpent #{Time.now - t1} secs" if options.timing
+puts "Spent #{Time.now - t1} secs" if options.timing
 
 # return OK if we reached end
 puts message
