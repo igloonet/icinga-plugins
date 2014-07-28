@@ -135,6 +135,7 @@ class ZoneCheck
     # get serial from every server
     @servers.each do |server|
       serial = Celluloid::IO::DNSResolver.new(server).get_serial(@zone)
+      responses.push serial
       return [2, "Zone #{@zone} is missing on #{server}."] if serial.nil?
     end
 
@@ -142,7 +143,7 @@ class ZoneCheck
     if responses.max == responses.min
       return [0, "Zone #{@zone} OK"]
     else
-      return [2, "Zone #{@zone} NOT in sync."] if serial.nil?
+      return [2, "Zone #{@zone} NOT in sync."]
     end
   end
 end
