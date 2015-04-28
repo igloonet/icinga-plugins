@@ -32,6 +32,7 @@ VERSION=0.1
 require 'optparse'
 require 'ostruct'
 require 'celluloid/io'
+require 'timeout'
 
 # Option parsing
 class OptparseChzones
@@ -41,6 +42,7 @@ class OptparseChzones
     options.file = 'domains.txt'
     options.timing = false
     options.workers = 50
+    options.timeout = 2
 
     opt_parser = OptionParser.new do |opts|
       opts.banner = "Usage: check_zones_in_sync -s dns,servers [-f domains.txt]"
@@ -134,9 +136,17 @@ class ZoneCheck
     responses = []
     # get serial from every server
     @servers.each do |server|
-      serial = Celluloid::IO::DNSResolver.new(server).get_serial(@zone)
-      responses.push serial
-      return [2, "Zone #{@zone} is missing on #{server}."] if serial.nil?
+      begin
+        Timeout::timeout(@options.timeout) {
+          serial = Celluloid::IO::DNSResolver.new(server).get_serial(@zone)
+          responses.push serial
+          return [2, "Zone #{@zone} is missing on #{server}."] if serial.nil?
+          puts "Checked #{server} SOA=#{serial}" if @options.debug
+        }
+      rescue Timeout::Error
+        puts "Checked #{server} Timed Out" if @options.debug
+        return [2, "Zone #{@zone} timed out on #{server}."]
+      end
     end
 
     # in case all serials are not same, we return critical
