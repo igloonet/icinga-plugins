@@ -31,6 +31,7 @@ VERSION=0.1
 
 require 'optparse'
 require 'ostruct'
+require 'celluloid/current'
 require 'celluloid/io'
 require 'timeout'
 
