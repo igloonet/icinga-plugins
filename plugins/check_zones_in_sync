@@ -34,6 +34,7 @@ require 'ostruct'
 require 'celluloid/current'
 require 'celluloid/io'
 require 'timeout'
+require 'ipaddr'
 
 # Option parsing
 class OptparseChzones
@@ -97,7 +98,11 @@ module Celluloid
 
         # The non-blocking secret sauce is here, as this is actually a
         # Celluloid::IO::UDPSocket
-        @socket = UDPSocket.new
+        if IPAddr.new(@server).ipv4?
+          @socket = UDPSocket.new()
+        else
+          @socket = UDPSocket.new(address_family=Socket::AF_INET6)
+        end
       end
       
       def build_query_soa(zone)
