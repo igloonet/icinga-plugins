@@ -113,7 +113,7 @@ module Celluloid
         @socket.send query.encode, 0, @server, DNS_PORT
         data, _ = @socket.recvfrom(512)
         response = Resolv::DNS::Message.decode(data)
-        return response.answer.select{|record| record[0].to_s == zone}.collect{|record| record[2].serial}.first
+        return response.answer.select{|record| record[0].to_s.downcase == zone}.collect{|record| record[2].serial}.first
       end
     end
     
